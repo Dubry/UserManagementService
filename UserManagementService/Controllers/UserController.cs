@@ -16,9 +16,6 @@ namespace UserManagementService.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
             var user = new User
             {
                 UserName = request.UserName,
@@ -66,9 +63,6 @@ namespace UserManagementService.Controllers
         public async Task<IActionResult> GetUserById(Guid id)
         {
             var user = await _userService.GetUserByIdAsync(id);
-            if (user == null)
-                return NotFound();
-
             return Ok(MapToResponse(user));
         }
 
@@ -76,10 +70,7 @@ namespace UserManagementService.Controllers
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserRequest request)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            var updated = await _userService.UpdateUserAsync(id, user =>
+            await _userService.UpdateUserAsync(id, user =>
             {
                 user.FullName = request.FullName;
                 user.Email = request.Email;
@@ -88,9 +79,6 @@ namespace UserManagementService.Controllers
                 user.Culture = request.Culture;
             });
 
-            if (!updated)
-                return NotFound();
-
             return NoContent();
         }
 
@@ -98,10 +86,7 @@ namespace UserManagementService.Controllers
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteUser(Guid id)
         {
-            var deleted = await _userService.DeleteUserAsync(id);
-            if (!deleted)
-                return NotFound();
-
+            await _userService.DeleteUserAsync(id);
             return NoContent();
         }
 
@@ -110,11 +95,7 @@ namespace UserManagementService.Controllers
         [EnableRateLimiting("passwordLimiter")]
         public async Task<IActionResult> ValidatePassword(Guid id, [FromBody] ValidatePasswordRequest request)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
             var isValid = await _userService.ValidatePasswordAsync(id, request.Password);
-
             return Ok(new { isValid });
         }
 

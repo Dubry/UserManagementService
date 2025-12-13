@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 using UserManagementService.Data;
 using UserManagementService.Middleware;
+using UserManagementService.Models;
 using UserManagementService.Services;
-using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +25,23 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddScoped<PasswordService>();
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var traceId = context.HttpContext.TraceIdentifier;
+
+        return new BadRequestObjectResult(new ErrorResponse
+        {
+            StatusCode = 400,
+            Error = "ValidationError",
+            Message = "One or more validation errors occurred.",
+            TraceId = traceId
+        });
+    };
+});
+
 builder.Services.AddDbContext<AppDbContext>(options => 
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -51,7 +70,7 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
-
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<ApiKeyMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseRateLimiter();
