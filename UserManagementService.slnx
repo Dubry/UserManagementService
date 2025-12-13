@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="UserManagementService.IntegrationTests/UserManagementService.IntegrationTests.csproj" />
+  <Project Path="UserManagementService.Tests/UserManagementService.Tests.csproj" />
   <Project Path="UserManagementService/UserManagementService.csproj" />
 </Solution>
