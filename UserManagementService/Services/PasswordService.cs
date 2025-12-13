@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 
 namespace UserManagementService.Services
 {
-    public class PasswordService
+    public class PasswordService : IPasswordService
     {
         const int SaltSize = 16;
         const int Iterations = 10000;

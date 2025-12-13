@@ -2,13 +2,14 @@
 using UserManagementService.Data;
 using UserManagementService.Models;
 using UserManagementService.Exceptions;
+using UserManagementService.DTOs.Users;
 
 namespace UserManagementService.Services
 {
-    public class UserService(AppDbContext context, PasswordService passwordService)
+    public class UserService(AppDbContext context, IPasswordService passwordService) : IUserService
     {
         private readonly AppDbContext _context = context;
-        private readonly PasswordService _passwordService = passwordService;
+        private readonly IPasswordService _passwordService = passwordService;
 
         public async Task<User> CreateUserAsync(User user, string password)
         {
@@ -18,7 +19,7 @@ namespace UserManagementService.Services
             return user;
         }
 
-        public async Task<List<User>> GetUsersAsync(int page, int pageSize)
+        public async Task<IEnumerable<User>> GetUsersAsync(int page, int pageSize)
         {
             return await _context.Users
                 .OrderBy(u => u.UserName)

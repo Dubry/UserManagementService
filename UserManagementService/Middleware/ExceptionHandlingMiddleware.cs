@@ -29,7 +29,7 @@ namespace UserManagementService.Middleware
         private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
             var traceId = context.TraceIdentifier;
-
+            var env = context.RequestServices.GetRequiredService<IHostEnvironment>();
             var clientIp = context.Connection.RemoteIpAddress?.ToString();
             var clientName = context.Items["ClientName"]?.ToString() ?? "Unknown";
             var host = Environment.MachineName;
@@ -62,7 +62,9 @@ namespace UserManagementService.Middleware
                 StatusCode = statusCode,
                 Error = error,
                 Message = statusCode == 500
-                    ? "An unexpected error occurred."
+                    ? env.IsEnvironment("Test") || env.IsDevelopment()
+                        ? exception.Message
+                        : "An unexpected error occurred."
                     : exception.Message,
                 TraceId = traceId
             };
