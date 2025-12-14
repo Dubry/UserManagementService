@@ -13,6 +13,11 @@ namespace UserManagementService.Services
 
         public async Task<User> CreateUserAsync(User user, string password)
         {
+            if (await _context.Users.AnyAsync(u => u.UserName == user.UserName))
+            {
+                throw new UserAlreadyExistsException($"Username '{user.UserName}' is already taken.");
+            }
+
             user.Password = _passwordService.HashPassword(password);
             _context.Users.Add(user);
             await _context.SaveChangesAsync();

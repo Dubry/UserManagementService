@@ -2,10 +2,11 @@
 {
     public class ApiClient
     {
-        public int Id { get; set; }
+        public Guid Id { get; set; }
 
-        public string ClientName { get; set; }
+        public string ClientName { get; set; } = default!;
 
-        public string ApiKey { get; set; }
+        public string ApiKey { get; set; } = default!;
+        public bool IsActive { get; set; }
     }
 }

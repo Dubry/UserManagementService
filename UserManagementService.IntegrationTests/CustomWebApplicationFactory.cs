@@ -27,7 +27,7 @@ namespace UserManagementService.IntegrationTests
                 // Create a scope to seed the database
                 using var scope = serviceProvider.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                db.Database.EnsureDeleted(); 
+
                 db.Database.EnsureCreated();
 
                 SeedApiClients(db);
@@ -37,13 +37,20 @@ namespace UserManagementService.IntegrationTests
 
         private static void SeedApiClients(AppDbContext db)
         {
-            if (db.ApiClients.Any())
+            if (db.ApiClients.Any(c => c.ApiKey == "test-api-key"))
                 return;
 
             db.ApiClients.Add(new ApiClient
             {
                 ClientName = "IntegrationTestClient",
-                ApiKey = "test-api-key"
+                ApiKey = "test-api-key",
+                IsActive = true,
+            });
+            db.ApiClients.Add(new ApiClient
+            {
+                ClientName = "DisabledClient",
+                ApiKey = "inactive-key",
+                IsActive = false
             });
 
             db.SaveChanges();

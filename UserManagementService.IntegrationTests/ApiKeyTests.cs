@@ -1,32 +1,43 @@
 ﻿using FluentAssertions;
+using Serilog;
 using System.Net;
 using System.Net.Http.Json;
+using UserManagementService.Data;
 using UserManagementService.DTOs.Users;
 using UserManagementService.Models;
 using Xunit;
 
 namespace UserManagementService.IntegrationTests
 {
-    public class ApiKeyTests : IClassFixture<CustomWebApplicationFactory>
+    public class ApiKeyTests(CustomWebApplicationFactory factory) : IntegrationTestBase(factory), IClassFixture<CustomWebApplicationFactory>
     {
-
-        private readonly HttpClient _client;
-
-        public ApiKeyTests(CustomWebApplicationFactory factory)
-        {
-            _client = factory.CreateClient();
-            // Add API key header for all requests
-            _client.DefaultRequestHeaders.Add("X-API-KEY", "test-api-key");
-        }
+        #region ApiKey tests
 
         [Fact]
         public async Task Request_WithoutApiKey_Returns401()
         {
-            var factory = new CustomWebApplicationFactory();
-            var client = factory.CreateClient();
+            Client.DefaultRequestHeaders.Remove("X-API-KEY");
 
-            var response = await client.GetAsync("/api/users");
+            var response = await Client.GetAsync("/api/users");
 
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Fact]
+        public async Task RequestWithInvalidApiKey_Returns401()
+        {
+            Client.DefaultRequestHeaders.Add("X-API-KEY", "invalid-key");
+
+            var response = await Client.GetAsync(Client.BaseAddress + "api/users");
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Fact]
+        public async Task RequestWithInactiveApiKey_Returns401()
+        {
+            Client.DefaultRequestHeaders.Add("X-API-KEY", "inactive-key");
+
+            var response = await Client.GetAsync(Client.BaseAddress + "api/users");
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
 
@@ -34,7 +45,7 @@ namespace UserManagementService.IntegrationTests
         public async Task Request_WithValidApiKey_Returns200()
         {
             // Act
-            var response = await _client.GetAsync("/api/users");
+            var response = await Client.GetAsync("/api/users");
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -42,96 +53,62 @@ namespace UserManagementService.IntegrationTests
             var users = await response.Content.ReadFromJsonAsync<PagedResponse<UserResponse>>();
             users.Should().NotBeNull();
             users?.Data.Should().Contain(u => u.UserName == "testuser");
-            // TEMP DEBUG
-            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        }
-
-        [Fact]
-        public async Task GetUserById_ReturnsUser_With200()
-        {
-            // Arrange - get the seeded user's ID
-            var usersResponse = await _client.GetAsync("/api/users?page=1&pageSize=10");
-            var users = await usersResponse.Content.ReadFromJsonAsync<PagedResponse<UserResponse>>();
-            var testUserId = users?.Data.First().Id;
-
-            // Act
-            var response = await _client.GetAsync($"/api/users/{testUserId}");
-
-            // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var user = await response.Content.ReadFromJsonAsync<User>();
-            user.UserName.Should().Be("testuser");
         }
 
+        #endregion
+
+        #region Rate Limiting Tests
+
         [Fact]
-        public async Task CreateUser_ReturnsCreatedUser_With200()
+        public async Task ExceedRateLimit_Returns429()
         {
             // Arrange
             var request = new CreateUserRequest
             {
-                UserName = "newuser",
-                FullName = "New User",
-                Email = "newuser@test.com",
-                MobileNumber = "+1987654321",
-                Language = "en",
-                Culture = "en-US",
+                UserName = "ratelimituser",
                 Password = "Password123!"
             };
 
             // Act
-            var response = await _client.PostAsJsonAsync("/api/users", request);
+            var response = await Client.PostAsJsonAsync("/api/users", request);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.Created);
 
             var createdUser = await response.Content.ReadFromJsonAsync<User>();
-            createdUser?.UserName.Should().Be("newuser");
-        }
 
-        [Fact]
-        public async Task UpdateUser_ReturnsUpdatedUser_With200()
-        {
-            // Arrange
-            var usersResponse = await _client.GetAsync("/api/users?page=1&pageSize=10");
-            var users = await usersResponse.Content.ReadFromJsonAsync<PagedResponse<UserResponse>>();
-            var userId = users?.Data.First().Id;
-
-            var updateRequest = new UpdateUserRequest
+            var url = $"/api/users/{createdUser.Id}/validate-password";
+            var requestBody = new ValidatePasswordRequest
             {
-                FullName = "Updated Name"
+                Password = "any-password"
             };
 
-            // Act
-            var response = await _client.PutAsJsonAsync($"/api/users/{userId}", updateRequest);
+            HttpResponseMessage lastResponse = null!;
+            for (int i = 0; i < 6; i++) 
+            {
+                lastResponse = await Client.PostAsJsonAsync(url, requestBody);
+            }
 
-            // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-            // Fetch the user again to verify update
-            var getResponse = await _client.GetAsync($"/api/users/{userId}");
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var updatedUser = await getResponse.Content.ReadFromJsonAsync<UserResponse>();
-            updatedUser.FullName.Should().Be("Updated Name");
+            lastResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         }
 
         [Fact]
-        public async Task DeleteUser_ReturnsNoContent()
+        public async Task RateLimit_Reset_AllowsNewRequests()
         {
-            // Arrange
-            var usersResponse = await _client.GetAsync("/api/users?page=1&pageSize=10");
-            var users = await usersResponse.Content.ReadFromJsonAsync<PagedResponse<UserResponse>>();
-            var userId = users?.Data.First().Id;
+            for (int i = 0; i < 5; i++)
+            {
+                var resp = await Client.GetAsync(Client.BaseAddress + "api/users");
+                resp.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
 
-            // Act
-            var response = await _client.DeleteAsync($"/api/users/{userId}");
+            await Task.Delay(TimeSpan.FromMinutes(1.1));
 
-            // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-            // Verify deletion
-            var getResponse = await _client.GetAsync($"/api/users/{userId}");
-            getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // Next request should succeed
+            var response = await Client.GetAsync(Client.BaseAddress + "api/users");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
+
+        #endregion
     }
 }

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OpenApi;
 using Serilog;
 using UserManagementService.Data;
 using UserManagementService.Middleware;
@@ -18,11 +20,47 @@ Log.Logger = new LoggerConfiguration()
         "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] {Message}{NewLine}")
     .CreateLogger();
 
+builder.Host.UseSerilog();
+
+
 // Add services to the container.
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "User Management API",
+        Version = "v1",
+        Description = "API for managing users with secure endpoints"
+    });
+
+    // API Key Security Definition
+    c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = "X-API-KEY",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Description = "API key required to access endpoints",
+
+    });
+
+    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("ApiKey", document)] = []
+    });
+
+    // Include XML comments
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
+});
+
 
 builder.Services.AddScoped<IPasswordService, PasswordService>();
 builder.Services.AddScoped<IUserService, UserService>();
@@ -46,7 +84,8 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 if (builder.Environment.IsEnvironment("Test"))
 {
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseInMemoryDatabase("TestDb"));
+        options.UseInMemoryDatabase("IntegrationTestsDb"));
+    
 }
 else
 {
@@ -61,26 +100,41 @@ builder.Services.AddRateLimiter(options =>
         limiter.PermitLimit = 5;
         limiter.Window = TimeSpan.FromMinutes(1);
         limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
     });
+    options.RejectionStatusCode = 429;
 });
 
-builder.Host.UseSerilog();
+
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<ApiKeyMiddleware>();
+
+app.UseHttpsRedirection();
+app.UseRateLimiter();
+app.UseAuthorization();
+app.MapControllers();
+
+
 if (app.Environment.IsDevelopment())
 {
+    app.UseSwagger();
+    app.UseSwaggerUI(c => 
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "User API V1");
+        c.RoutePrefix = string.Empty;
+
+        // Add a preconfigured API key for testing
+        c.ConfigObject.AdditionalItems["X-API-KEY"] = "swagger-dev-key";
+    });
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
 
-app.UseAuthorization();
 
-app.MapControllers();
-app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseMiddleware<ApiKeyMiddleware>();
-app.UseMiddleware<RequestLoggingMiddleware>();
-app.UseRateLimiter();
 app.Run();
+
+public partial class Program { }
